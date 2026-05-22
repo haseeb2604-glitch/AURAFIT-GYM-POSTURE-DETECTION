@@ -1,0 +1,364 @@
+{% extends 'gym/base.html' %}
+{% block title %}Dashboard — AuraFit Pro{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Exercise Cards ───────────────────────────────── */
+.ex-card-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:16px; }
+@media(max-width:576px){ .ex-card-grid{grid-template-columns:1fr;} }
+
+.ex-card {
+  position:relative; overflow:hidden; border-radius:18px;
+  border:1px solid #1e2a3a; background:#111827;
+  text-decoration:none; color:inherit; display:block;
+  transition:transform 0.25s, box-shadow 0.25s, border-color 0.25s;
+  cursor:pointer;
+}
+.ex-card::before {
+  content:''; position:absolute; inset:0;
+  background: var(--card-gradient);
+  opacity:0.07; transition:opacity 0.3s;
+}
+.ex-card:hover { transform:translateY(-5px); color:inherit; }
+.ex-card:hover::before { opacity:0.14; }
+
+.ex-card[data-ex="jumping_jacks"] { --card-gradient:linear-gradient(135deg,#00ffcc,#00a86b); --accent-clr:#00ffcc; }
+.ex-card[data-ex="jumping_jacks"]:hover { border-color:#00ffcc; box-shadow:0 12px 35px rgba(0,255,204,0.2); }
+
+.ex-card[data-ex="lunges"] { --card-gradient:linear-gradient(135deg,#7c3aed,#4f1fa3); --accent-clr:#7c3aed; }
+.ex-card[data-ex="lunges"]:hover { border-color:#7c3aed; box-shadow:0 12px 35px rgba(124,58,237,0.2); }
+
+.ex-card[data-ex="pushups"] { --card-gradient:linear-gradient(135deg,#ff007f,#aa003f); --accent-clr:#ff007f; }
+.ex-card[data-ex="pushups"]:hover { border-color:#ff007f; box-shadow:0 12px 35px rgba(255,0,127,0.2); }
+
+.ex-card[data-ex="squats"] { --card-gradient:linear-gradient(135deg,#fb923c,#c2400c); --accent-clr:#fb923c; }
+.ex-card[data-ex="squats"]:hover { border-color:#fb923c; box-shadow:0 12px 35px rgba(251,146,60,0.2); }
+
+.ex-card-icon {
+  font-size:3rem; line-height:1;
+  position:absolute; top:14px; right:16px; opacity:0.25;
+  transition:opacity 0.3s, transform 0.3s;
+}
+.ex-card:hover .ex-card-icon { opacity:0.5; transform:scale(1.15) rotate(-8deg); }
+
+.ex-card-body { padding:20px; position:relative; z-index:1; }
+
+.ex-card-name {
+  font-size:1.05rem; font-weight:800;
+  color:#e2e8f0; margin-bottom:4px; letter-spacing:0.3px;
+}
+.ex-card-desc { font-size:0.78rem; color:#6b7a99; margin-bottom:10px; line-height:1.4; }
+
+.ex-card-tags { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+.ex-tag {
+  font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.8px;
+  padding:3px 9px; border-radius:99px; background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.08); color:#94a3b8;
+}
+
+.ex-card-footer {
+  display:flex; align-items:center; justify-content:space-between;
+  border-top:1px solid rgba(255,255,255,0.06); padding-top:12px; margin-top:4px;
+}
+.ex-card-cta {
+  font-size:0.78rem; font-weight:700; letter-spacing:0.5px;
+  color:var(--accent-clr); display:flex; align-items:center; gap:5px;
+}
+.ex-card-cta-arrow {
+  width:26px; height:26px; border-radius:50%; border:1.5px solid var(--accent-clr);
+  display:flex; align-items:center; justify-content:center; font-size:0.75rem;
+  color:var(--accent-clr); transition:background 0.2s, transform 0.2s;
+}
+.ex-card:hover .ex-card-cta-arrow { background:var(--accent-clr); color:#0a0d14; transform:translateX(3px); }
+
+.ex-card-muscles { font-size:0.7rem; color:#475569; }
+.ex-card-muscles i { color:var(--accent-clr); }
+
+/* ── Stat Cards ───────────────────────────────────── */
+.stat-card {
+  background:linear-gradient(145deg,#111827,#141e2e);
+  border:1px solid #1e2a3a; border-radius:16px; padding:20px;
+  position:relative; overflow:hidden;
+}
+.stat-card::after {
+  content:''; position:absolute; bottom:-20px; right:-20px;
+  width:80px; height:80px; border-radius:50%;
+  background:var(--stat-glow); opacity:0.15;
+}
+.stat-card.glow-teal  { --stat-glow:#00ffcc; }
+.stat-card.glow-purple{ --stat-glow:#7c3aed; }
+.stat-card.glow-pink  { --stat-glow:#ff007f; }
+.stat-card.glow-orange{ --stat-glow:#fb923c; }
+
+.stat-card-icon {
+  width:38px; height:38px; border-radius:10px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:1rem; margin-bottom:14px;
+}
+.stat-card-icon.teal   { background:rgba(0,255,204,0.12); color:#00ffcc; }
+.stat-card-icon.purple { background:rgba(124,58,237,0.12); color:#7c3aed; }
+.stat-card-icon.pink   { background:rgba(255,0,127,0.12);  color:#ff007f; }
+.stat-card-icon.orange { background:rgba(251,146,60,0.12); color:#fb923c; }
+
+/* ── Recent session items ─────────────────────────── */
+.session-item {
+  display:flex; align-items:center; gap:12px; padding:10px 0;
+  border-bottom:1px solid #0f1621;
+}
+.session-item:last-child { border-bottom:none; }
+.session-icon-wrap {
+  width:36px; height:36px; border-radius:10px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center; font-size:1.2rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 px-md-4 py-4">
+
+  <!-- ── Greeting ── -->
+  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+      <h1 style="font-weight:900;font-size:1.75rem;margin:0;">
+        Hey, <span style="color:#00ffcc;">{{ user.get_full_name|default:user.username }}</span> 👋
+      </h1>
+      <p style="color:#6b7a99;margin:2px 0 0;font-size:0.9rem;">Ready to crush your workout today?</p>
+    </div>
+    <a href="{% url 'history' %}" class="btn btn-outline-accent d-none d-sm-inline-flex align-items-center gap-2">
+      <i class="bi bi-clock-history"></i> Workout History
+    </a>
+  </div>
+
+  <!-- ── Stat Cards ── -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+      <div class="stat-card glow-teal">
+        <div class="stat-card-icon teal"><i class="bi bi-activity"></i></div>
+        <div class="stat-value">{{ stats.total_sessions }}</div>
+        <div class="stat-label">Total Sessions</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="stat-card glow-purple">
+        <div class="stat-card-icon purple"><i class="bi bi-arrow-repeat"></i></div>
+        <div class="stat-value">{{ stats.total_reps }}</div>
+        <div class="stat-label">Total Reps</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="stat-card glow-pink">
+        <div class="stat-card-icon pink"><i class="bi bi-stopwatch-fill"></i></div>
+        <div class="stat-value">{{ stats.total_duration_min }}<span style="font-size:1rem;">m</span></div>
+        <div class="stat-label">Active Minutes</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="stat-card glow-orange">
+        <div class="stat-card-icon orange"><i class="bi bi-star-fill"></i></div>
+        <div class="stat-value">{{ stats.avg_efficiency }}<span style="font-size:1rem;">%</span></div>
+        <div class="stat-label">Avg Efficiency</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+
+    <!-- ── Exercise Cards ── -->
+    <div class="col-12 col-lg-9">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <i class="bi bi-lightning-fill" style="color:#00ffcc;"></i>
+        <span style="color:#94a3b8;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">
+          Choose Exercise
+        </span>
+      </div>
+
+      <div class="ex-card-grid" style="display: grid; grid-auto-rows: minmax(150px, 1fr);">
+        <!-- Jumping Jacks -->
+        <a href="{% url 'workout' 'jumping_jacks' %}" class="ex-card" data-ex="jumping_jacks">
+          <span class="ex-card-icon">🏃</span>
+          <div class="ex-card-body">
+            <div class="ex-card-name">Jumping Jacks</div>
+            <div class="ex-card-desc">Full body cardio that gets your heart pumping</div>
+            <div class="ex-card-tags">
+              <span class="ex-tag">Cardio</span>
+              <span class="ex-tag">Full Body</span>
+              <span class="ex-tag badge-difficulty-beginner">Beginner</span>
+            </div>
+            <div class="ex-card-footer">
+              <div class="ex-card-muscles">
+                <i class="bi bi-bullseye me-1"></i>Full Body, Cardio
+              </div>
+              <div class="ex-card-cta">
+                Start
+                <div class="ex-card-cta-arrow"><i class="bi bi-arrow-right"></i></div>
+              </div>
+            </div>
+          </div>
+        </a>
+
+        <!-- Lunges -->
+        <a href="{% url 'workout' 'lunges' %}" class="ex-card" data-ex="lunges">
+          <span class="ex-card-icon">🦵</span>
+          <div class="ex-card-body">
+            <div class="ex-card-name">Lunges</div>
+            <div class="ex-card-desc">Build lower body strength & improve balance</div>
+            <div class="ex-card-tags">
+              <span class="ex-tag">Strength</span>
+              <span class="ex-tag">Lower Body</span>
+              <span class="ex-tag badge-difficulty-intermediate">Intermediate</span>
+            </div>
+            <div class="ex-card-footer">
+              <div class="ex-card-muscles">
+                <i class="bi bi-bullseye me-1"></i>Quads, Glutes, Hamstrings
+              </div>
+              <div class="ex-card-cta">
+                Start
+                <div class="ex-card-cta-arrow"><i class="bi bi-arrow-right"></i></div>
+              </div>
+            </div>
+          </div>
+        </a>
+
+        <!-- Push Ups -->
+        <a href="{% url 'workout' 'pushups' %}" class="ex-card" data-ex="pushups">
+          <span class="ex-card-icon">💪</span>
+          <div class="ex-card-body">
+            <div class="ex-card-name">Push Ups</div>
+            <div class="ex-card-desc">Classic upper body compound movement</div>
+            <div class="ex-card-tags">
+              <span class="ex-tag">Strength</span>
+              <span class="ex-tag">Upper Body</span>
+              <span class="ex-tag badge-difficulty-intermediate">Intermediate</span>
+            </div>
+            <div class="ex-card-footer">
+              <div class="ex-card-muscles">
+                <i class="bi bi-bullseye me-1"></i>Chest, Triceps, Shoulders
+              </div>
+              <div class="ex-card-cta">
+                Start
+                <div class="ex-card-cta-arrow"><i class="bi bi-arrow-right"></i></div>
+              </div>
+            </div>
+          </div>
+        </a>
+
+        <!-- Squats -->
+        <a href="{% url 'workout' 'squats' %}" class="ex-card" data-ex="squats" >
+          <span class="ex-card-icon">🏋️</span>
+          <div class="ex-card-body">
+            <div class="ex-card-name">Squats</div>
+            <div class="ex-card-desc">King of lower body exercises for power</div>
+            <div class="ex-card-tags">
+              <span class="ex-tag">Power</span>
+              <span class="ex-tag">Lower Body</span>
+              <span class="ex-tag badge-difficulty-beginner">Beginner</span>
+            </div>
+            <div class="ex-card-footer">
+              <div class="ex-card-muscles">
+                <i class="bi bi-bullseye me-1"></i>Quads, Glutes, Core
+              </div>
+              <div class="ex-card-cta">
+                Start
+                <div class="ex-card-cta-arrow"><i class="bi bi-arrow-right"></i></div>
+              </div>
+            </div>
+          </div>
+        </a>
+      </div>
+    </div>
+
+    <!-- ── Right Column ── -->
+    <div class="col-12 col-lg-3">
+
+      {% if exercise_breakdown != '{}' %}
+      <div class="card-dark p-3 mt-4 mb-4">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <i class="bi bi-pie-chart-fill" style="color:#7c3aed;"></i>
+          <span style="color:#94a3b8;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">
+            Exercise Breakdown
+          </span>
+        </div>
+        <canvas id="breakdownChart" height="120"></canvas>
+      </div>
+      {% endif %}
+
+      <!-- Recent Sessions -->
+      <div class="card-dark p-3">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-clock-fill" style="color:#ff007f;"></i>
+            <span style="color:#94a3b8;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">
+              Recent Sessions
+            </span>
+          </div>
+          <a href="{% url 'history' %}" style="color:#00ffcc;font-size:0.78rem;text-decoration:none;font-weight:600;">
+            View All →
+          </a>
+        </div>
+
+        {% if recent_sessions %}
+          {% for s in recent_sessions %}
+          <div class="session-item">
+            <div class="session-icon-wrap"
+                 style="background:{% if s.exercise == 'jumping_jacks' %}rgba(0,255,204,0.1){% elif s.exercise == 'lunges' %}rgba(124,58,237,0.1){% elif s.exercise == 'pushups' %}rgba(255,0,127,0.1){% else %}rgba(251,146,60,0.1){% endif %};">
+              {% if s.exercise == 'jumping_jacks' %}🏃{% elif s.exercise == 'lunges' %}🦵{% elif s.exercise == 'pushups' %}💪{% else %}🏋️{% endif %}
+            </div>
+            <div class="flex-grow-1" style="min-width:0;">
+              <div style="font-size:0.85rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                {{ s.get_exercise_display }}
+              </div>
+              <div style="color:#6b7a99;font-size:0.73rem;">
+                {{ s.total_reps }} reps &middot; {{ s.sets_completed }} sets &middot; {{ s.duration_display }}
+              </div>
+            </div>
+            <div class="text-end flex-shrink-0">
+              <div style="font-weight:800;font-size:0.9rem;
+                          color:{% if s.efficiency_percent >= 80 %}#34d399{% elif s.efficiency_percent >= 50 %}#fb923c{% else %}#f87171{% endif %};">
+                {{ s.efficiency_percent }}%
+              </div>
+              <div style="color:#475569;font-size:0.7rem;">{{ s.created_at|date:"d M" }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="text-center py-4">
+            <div style="font-size:2.5rem;margin-bottom:8px;">🏋️</div>
+            <p style="color:#6b7a99;font-size:0.85rem;margin:0;">No sessions yet — start your first workout!</p>
+          </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+{% if exercise_breakdown != '{}' %}
+const bd = {{ exercise_breakdown|safe }};
+new Chart(document.getElementById('breakdownChart'), {
+  type: 'doughnut',
+  data: {
+    labels: Object.keys(bd),
+    datasets: [{
+      data: Object.values(bd),
+      backgroundColor: ['#00ffcc','#7c3aed','#ff007f','#fb923c'],
+      borderColor: '#111827', borderWidth: 4,
+      hoverOffset: 6,
+    }]
+  },
+  options: {
+    cutout: '68%',
+    plugins: {
+      legend: {
+        position:'bottom',
+        labels:{ color:'#94a3b8', font:{ size:11 }, padding:14, boxWidth:12, borderRadius:3 }
+      }
+    },
+  }
+});
+{% endif %}
+</script>
+{% endblock %}

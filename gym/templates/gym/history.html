@@ -1,0 +1,152 @@
+{% extends 'gym/base.html' %}
+{% block title %}History — AuraFit Pro{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-4">
+
+  <div class="page-header d-flex align-items-center justify-content-between">
+    <div>
+      <h1 style="font-weight:800;">📋 Workout History</h1>
+      <p style="color:#6b7a99;margin:0;">All your training sessions in one place</p>
+    </div>
+  </div>
+
+  <!-- Stats Summary -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card-dark p-3 text-center">
+        <div class="stat-value">{{ stats.total }}</div>
+        <div class="stat-label">Sessions</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card-dark p-3 text-center">
+        <div class="stat-value">{{ stats.total_reps }}</div>
+        <div class="stat-label">Total Reps</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card-dark p-3 text-center">
+        <div class="stat-value">{{ stats.avg_efficiency }}<span style="font-size:1rem">%</span></div>
+        <div class="stat-label">Avg Efficiency</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card-dark p-3 text-center">
+        <div class="stat-value">{{ stats.targets_met }}</div>
+        <div class="stat-label">Targets Met 🎯</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="card-dark p-3 mb-3">
+    <form method="get" class="d-flex gap-2 align-items-center flex-wrap">
+      <span style="color:#6b7a99;font-size:0.85rem;"><i class="bi bi-funnel me-1"></i>Filter:</span>
+      <a href="{% url 'history' %}"
+         class="btn btn-sm {% if not selected_exercise %}btn-accent{% else %}btn-outline-accent{% endif %}">
+        All
+      </a>
+      {% for key, label in exercise_choices %}
+      <a href="?exercise={{ key }}"
+         class="btn btn-sm {% if selected_exercise == key %}btn-accent{% else %}btn-outline-accent{% endif %}">
+        {% if key == 'jumping_jacks' %}🏃{% elif key == 'lunges' %}🦵{% elif key == 'pushups' %}💪{% elif key == 'squats' %}🏋️{% endif %}
+        {{ label }}
+      </a>
+      {% endfor %}
+    </form>
+  </div>
+
+  <!-- Sessions Table -->
+  <div class="card-dark">
+    {% if sessions %}
+    <div class="table-responsive">
+      <table class="table table-dark-custom mb-0">
+        <thead>
+          <tr>
+            <th>Exercise</th>
+            <th>Date</th>
+            <th>Sets</th>
+            <th>Reps</th>
+            <th>Duration</th>
+            <th>Efficiency</th>
+            <th>Target</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in sessions %}
+          <tr>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <span style="font-size:1.2rem;">
+                  {% if s.exercise == 'jumping_jacks' %}🏃
+                  {% elif s.exercise == 'lunges' %}🦵
+                  {% elif s.exercise == 'pushups' %}💪
+                  {% elif s.exercise == 'squats' %}🏋️
+                  {% endif %}
+                </span>
+                <span style="font-weight:600;font-size:0.9rem;">{{ s.get_exercise_display }}</span>
+              </div>
+            </td>
+            <td style="color:#94a3b8;font-size:0.85rem;">
+              {{ s.created_at|date:"d M Y" }}<br>
+              <span style="color:#475569;font-size:0.75rem;">{{ s.created_at|time:"H:i" }}</span>
+            </td>
+            <td>
+              <span style="font-weight:700;">{{ s.sets_completed }}</span>
+              <span style="color:#475569;">/{{ s.target_sets }}</span>
+            </td>
+            <td>
+              <span style="font-weight:700;">{{ s.total_reps }}</span>
+              <span style="color:#475569;">reps</span>
+            </td>
+            <td style="font-family:'Courier New',monospace;color:#00ffcc;">{{ s.duration_display }}</td>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <div class="efficiency-bar-wrap" style="width:60px;">
+                  <div class="efficiency-bar"
+                       style="width:{{ s.efficiency_percent }}%;
+                              background:{% if s.efficiency_percent >= 80 %}#34d399{% elif s.efficiency_percent >= 50 %}#fb923c{% else %}#f87171{% endif %};">
+                  </div>
+                </div>
+                <span style="font-size:0.85rem;font-weight:600;
+                             color:{% if s.efficiency_percent >= 80 %}#34d399{% elif s.efficiency_percent >= 50 %}#fb923c{% else %}#f87171{% endif %};">
+                  {{ s.efficiency_percent }}%
+                </span>
+              </div>
+            </td>
+            <td>
+              {% if s.target_met %}
+                <span class="badge" style="background:#064e3b;color:#34d399;">✅ Met</span>
+              {% else %}
+                <span class="badge" style="background:#450a0a;color:#f87171;">❌ Missed</span>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{% url 'delete_session' s.id %}"
+                 class="btn btn-sm"
+                 style="color:#f87171;background:transparent;border:1px solid #450a0a;border-radius:6px;"
+                 onclick="return confirm('Delete this session?')">
+                <i class="bi bi-trash"></i>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5">
+      <div style="font-size:3rem;">🏋️</div>
+      <h5 style="color:#94a3b8;margin-top:12px;">No sessions found</h5>
+      <p style="color:#6b7a99;font-size:0.9rem;">
+        {% if selected_exercise %}No sessions for this exercise yet.{% else %}Start your first workout!{% endif %}
+      </p>
+      <a href="{% url 'dashboard' %}" class="btn btn-accent px-4">Go to Dashboard</a>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

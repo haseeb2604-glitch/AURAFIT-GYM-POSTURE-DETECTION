@@ -1,0 +1,35 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local configuration / Sensitive data
+.env
+db.sqlite3
+*.log
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+pyenv/
+
+
+.venv/
+# Static and Media files (Uploaded by users / gathered by collectstatic)
+/staticfiles/
+/media/
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS generated files
+.DS_Store
+Thumbs.db

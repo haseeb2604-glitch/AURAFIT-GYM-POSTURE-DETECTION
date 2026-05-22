@@ -1,0 +1,986 @@
+{% extends 'gym/base.html' %}
+{% block title %}{{ meta.display_name }} — AuraFit Pro{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Workout Page Specific ── */
+.ws-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:99px;
+            font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:1px; }
+.ws-live   { background:rgba(255,50,50,0.15); color:#ff5555; border:1px solid rgba(255,50,50,0.3); }
+.ws-off    { background:rgba(100,120,150,0.15); color:#6b7a99; border:1px solid rgba(100,120,150,0.2); }
+.blink     { animation: blink 1s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* Video canvas wrapper */
+#cam-wrapper {
+  position:relative; background:#080c14; border-radius:14px; overflow:hidden;
+  aspect-ratio:16/9; border:2px solid #1e2a3a;
+}
+/* Compact sizing: increase camera wrapper cap so it's larger than before */
+#cam-wrapper { max-height:640px; }
+@media (min-width:1200px) {
+  #cam-wrapper { max-height:520px; }
+}
+@media (max-width:1199px) and (min-width:768px) {
+  #cam-wrapper { max-height:560px; }
+}
+/* Demo video sizing (slightly larger) */
+.card-dark video { max-height:220px; width:100%; height:auto; object-fit:cover; border-radius:14px; }
+
+#cam-wrapper canvas, #cam-wrapper video { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#000; }
+#cam-placeholder-overlay {
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; z-index:5;
+}
+
+/* Rest overlay shown over the camera during rest periods */
+#rest-overlay {
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; z-index:12; pointer-events:none;
+  background: rgba(2,6,23,0.45); color:#fff; text-align:center;
+}
+#rest-overlay .rest-text {
+  font-size:3.2rem; font-weight:900; color:#fb923c; letter-spacing:2px;
+  text-shadow: 0 6px 20px rgba(0,0,0,0.6);
+}
+#rest-overlay .rest-count { margin-top:8px; font-size:1.2rem; color:#ffd7b5; font-weight:800; }
+
+/* Live stat boxes */
+.live-stat {
+  background: linear-gradient(145deg, #111827, #1a2235);
+  border: 1px solid #1e2a3a;
+  border-radius: 14px;
+  padding: 16px 12px;
+  text-align: center;
+  transition: border-color 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+.live-stat::before {
+  content:'';
+  position:absolute; inset:0;
+  background: linear-gradient(135deg, transparent 60%, rgba(0,255,204,0.04));
+  pointer-events: none;
+}
+.live-stat.pulse-green { border-color: #00ffcc; box-shadow: 0 0 16px rgba(0,255,204,0.15); }
+.live-stat-num {
+  font-size: 2.8rem; font-weight: 900; line-height: 1;
+  font-family: 'Courier New', monospace;
+  color: #00ffcc;
+  text-shadow: 0 0 20px rgba(0,255,204,0.4);
+}
+.live-stat-label { font-size:0.68rem; color:#6b7a99; text-transform:uppercase; letter-spacing:1.5px; margin-top:5px; }
+
+/* Feedback pill */
+#feedback-pill {
+  display:inline-block; padding:10px 20px; border-radius:99px;
+  font-size:0.95rem; font-weight:700; letter-spacing:1px;
+  transition: all 0.3s; background:#1a2235; color:#00ffcc;
+  border:1px solid #1e2a3a; min-width:180px; text-align:center;
+}
+
+/* Efficiency ring */
+.eff-ring-wrap { position:relative; width:90px; height:90px; margin:0 auto; }
+.eff-ring-wrap svg { transform:rotate(-90deg); }
+.eff-ring-bg  { fill:none; stroke:#1e2a3a; stroke-width:7; }
+.eff-ring-fg  { fill:none; stroke:#00ffcc; stroke-width:7; stroke-linecap:round;
+               stroke-dasharray:245; stroke-dashoffset:245; transition:stroke-dashoffset 0.5s; }
+.eff-ring-text { position:absolute; inset:0; display:flex; flex-direction:column;
+                 align-items:center; justify-content:center; }
+
+/* Target progress bar */
+.target-bar-wrap { background:#1a2235; border-radius:99px; height:8px; overflow:hidden; margin-top:6px; }
+.target-bar      { height:100%; border-radius:99px; background:linear-gradient(90deg,#00ffcc,#00a86b);
+                   transition:width 0.4s; }
+
+/* Set dots */
+.set-dot {
+  width:20px; height:20px; border-radius:50%;
+  border:2px solid #2d3748; background:#111827;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-size:0.6rem; color:#6b7a99; transition:all 0.3s;
+}
+.set-dot.done { background:#00ffcc; border-color:#00ffcc; color:#0a0d14; font-weight:800; }
+.set-dot.active { border-color:#00ffcc; color:#00ffcc; animation:pulse-accent 1.5s infinite; }
+
+/* Control buttons */
+.ctrl-btn {
+  border:none; border-radius:12px; font-weight:700; font-size:0.9rem;
+  padding:13px 20px; transition:all 0.2s; cursor:pointer; display:flex;
+  align-items:center; justify-content:center; gap:8px;
+}
+.ctrl-btn-start { background:linear-gradient(135deg,#00ffcc,#00c8a0); color:#0a0d14; }
+.ctrl-btn-start:hover { transform:translateY(-2px); box-shadow:0 8px 25px rgba(0,255,204,0.35); }
+.ctrl-btn-stop  { background:linear-gradient(135deg,#ff4444,#cc2222); color:#fff; }
+.ctrl-btn-stop:hover  { transform:translateY(-2px); box-shadow:0 8px 25px rgba(255,50,50,0.35); }
+.ctrl-btn-save  { background:linear-gradient(135deg,#7c3aed,#5b21b6); color:#fff; }
+.ctrl-btn-save:hover  { transform:translateY(-2px); box-shadow:0 8px 25px rgba(124,58,237,0.35); }
+
+/* Exercise selector pills */
+.ex-pill {
+  display:inline-flex; align-items:center; gap:8px; padding:8px 16px;
+  border-radius:99px; font-size:0.82rem; font-weight:600; cursor:pointer;
+  border:1px solid #1e2a3a; background:#111827; color:#94a3b8;
+  text-decoration:none; transition:all 0.2s;
+}
+.ex-pill:hover, .ex-pill.active {
+  border-color:#00ffcc; background:rgba(0,255,204,0.08); color:#00ffcc;
+}
+
+/* Compact pills when placed in header */
+.ex-pill-header { padding:6px 12px; font-size:0.78rem; border-radius:20px; }
+
+/* Header set dots (compact) */
+.header-set-dots { margin-top:8px; display:flex; align-items:center; gap:8px; }
+.header-set-dots .label { color:#94a3b8; font-size:0.72rem; text-transform:uppercase; letter-spacing:1px; }
+.header-set-dots #set-dots { display:flex; gap:6px; }
+.header-set-dots .set-dot { width:18px; height:18px; font-size:0.62rem; }
+@media (max-width: 768px) {
+  .header-set-dots { display:none; }
+}
+
+/* Summary modal style */
+.summary-overlay {
+  position:fixed; inset:0; background:rgba(5,8,16,0.92);
+  z-index:9000; display:flex; align-items:center; justify-content:center;
+  backdrop-filter:blur(6px);
+}
+.summary-box {
+  background:#111827; border:1px solid #1e2a3a; border-radius:20px;
+  padding:32px; width:100%; max-width:420px;
+}
+
+/* Emoji effects */
+#effect-container { position:fixed; inset:0; pointer-events:none; overflow:hidden; z-index:10050; }
+.effect-piece {
+  position:absolute; will-change:transform,opacity; text-shadow:0 8px 18px rgba(0,0,0,0.35);
+  user-select:none; line-height:1;
+}
+.effect-rise {
+  animation-name: effect-rise;
+  animation-iteration-count: 1;
+  animation-timing-function: linear;
+}
+.effect-fall {
+  animation-name: effect-fall;
+  animation-iteration-count: 1;
+  animation-timing-function: linear;
+}
+@keyframes effect-rise {
+  0% { 
+    /* Screen ke bilkul bottom edge par show hoga */
+    transform: translateY(calc(100vh - 100%)) rotate(0deg) scale(0.95); 
+    opacity: 1; 
+  }
+  100% { 
+    /* Screen se upar gayab ho jayega */
+    transform: translateY(-100vh) rotate(360deg) scale(1.05); 
+    opacity: 0; 
+  }
+}
+@keyframes effect-fall {
+  0% { transform: translateY(-18vh) rotate(0deg) scale(0.95); opacity:1 }
+  100% { transform: translateY(110vh) rotate(360deg) scale(1.05); opacity:0 }
+}
+
+/* Slightly reduce the main camera card size (less padding) */
+.col-xl-8 > .card-dark { padding:14px !important; }
+.col-xl-8 > .card-dark .ctrl-btn { padding:10px 14px; }
+
+
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 px-md-4 py-2">
+
+  <!-- ── Top Bar ── -->
+  <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+    <a href="{% url 'dashboard' %}" style="color:#6b7a99;text-decoration:none;flex-shrink:0;">
+      <i class="bi bi-arrow-left-circle-fill" style="font-size:1.5rem;"></i>
+    </a> 
+    <div class="flex-grow-1">
+      {% comment %} <h2 style="font-weight:900;margin:0;font-size:1.5rem;">
+        {{ meta.icon }} {{ meta.display_name }}
+      </h2>
+      <span style="color:#6b7a99;font-size:0.8rem;">{{ meta.muscles }}</span> {% endcomment %}
+      <!-- Exercise pills moved into header (compact) -->
+      <div class="d-flex gap-2 mt-2 header-ex-pills">
+        {% for key, label in exercise_choices %}
+        <a href="{% url 'workout' key %}"
+           class="ex-pill ex-pill-header {% if key == exercise_key %}active{% endif %}">
+          {% if key == 'jumping_jacks' %}🏃{% elif key == 'lunges' %}🦵{% elif key == 'pushups' %}💪{% elif key == 'squats' %}🏋️{% endif %}
+          {{ label }}
+        </a>
+        {% endfor %}
+      </div>
+    </div> 
+    <div id="ws-status" class="ws-badge ws-off">
+      <span class="dot" style="width:7px;height:7px;border-radius:50%;background:#6b7a99;"></span>
+      <span id="ws-label">Disconnected</span>
+    </div>
+  </div>
+
+
+  <div class="row g-3">
+
+    <!-- ── LEFT: Camera ── -->
+    <div class="col-12 col-xl-9">
+      <div class="card-dark p-3">
+
+        <!-- Camera wrapper -->
+        <div id="cam-wrapper" class="mb-3">
+          <canvas id="out-canvas"></canvas>
+          <video id="raw-video" autoplay playsinline muted style="display:none;"></video>
+          <canvas id="capture-canvas" style="display:none;"></canvas>
+
+          <!-- Placeholder -->
+          <div id="cam-placeholder-overlay">
+            <div style="font-size:3.5rem;margin-bottom:12px;">{{ meta.icon }}</div>
+            <p style="color:#94a3b8;font-weight:700;font-size:1rem;margin:0;">{{ meta.display_name }}</p>
+            <p style="color:#475569;font-size:0.8rem;margin:4px 0 20px;">Allow camera access & click Start</p>
+            <button class="ctrl-btn ctrl-btn-start px-5" onclick="startWorkout()">
+              <i class="bi bi-play-fill"></i> Start Workout
+            </button>
+          </div>
+
+          <!-- Rest overlay (large on-screen REST indicator) -->
+          <div id="rest-overlay" class="d-none">
+            <div class="rest-text">REST</div>
+            <div id="rest-overlay-countdown" class="rest-count">0s</div>
+          </div>
+        </div>
+
+        <!-- Feedback + Timer row -->
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+          <div id="feedback-pill">READY TO START</div>
+          <div style="font-family:'Courier New',monospace;font-size:1.2rem;font-weight:700;color:#00ffcc;">
+            <i class="bi bi-stopwatch me-1" style="font-size:0.9rem;"></i>
+            <span id="timer-display">00:00</span>
+          </div>
+        </div>
+
+        <div id="rest-status" class="d-none mb-3" style="background:#2a1a12;border:1px solid #fb923c;color:#fb923c;border-radius:12px;padding:10px 14px;font-weight:700;letter-spacing:0.5px;text-align:center;">
+          REST <span id="rest-countdown">0</span>s
+        </div>
+
+        <!-- Action buttons -->
+        <div class="d-flex gap-2 flex-wrap" id="ctrl-buttons">
+          <button class="ctrl-btn ctrl-btn-start flex-grow-1" id="btn-start" onclick="startWorkout()">
+            <i class="bi bi-play-fill"></i> Start Camera
+          </button>
+          <button class="ctrl-btn ctrl-btn-stop flex-grow-1 d-none" id="btn-stop" onclick="stopWorkout()">
+            <i class="bi bi-stop-fill"></i> Stop & Save
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── RIGHT: Analytics ── -->
+    <div class="col-12 col-xl-3">
+
+      <!-- Target Settings -->
+      <div class="card-dark p-3 mb-3">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <i class="bi bi-sliders" style="color:#7c3aed;"></i>
+          <span style="color:#94a3b8;font-size:0.72rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;">
+            Target Settings
+          </span>
+        </div>
+        <div class="row g-2">
+          <div class="col-6">
+            <label style="color:#6b7a99;font-size:0.72rem;display:block;margin-bottom:4px;">Sets</label>
+            <input type="number" id="target-sets" class="form-control text-center fw-bold"
+                   value="3" min="1" max="20" style="font-size:1.1rem;">
+          </div>
+          <div class="col-6">
+            <label style="color:#6b7a99;font-size:0.72rem;display:block;margin-bottom:4px;">Reps / Set</label>
+            <input type="number" id="target-reps" class="form-control text-center fw-bold"
+                   value="10" min="1" max="100" style="font-size:1.1rem;">
+          </div>
+        </div>
+        <div class="row g-2 mt-2">
+          <div class="col-12">
+            <label style="color:#6b7a99;font-size:0.72rem;display:block;margin-bottom:4px;">Rest Gap (Seconds)</label>
+            <input type="number" id="rest-gap" class="form-control text-center fw-bold"
+                   value="30" min="0" max="300" style="font-size:1.1rem;">
+          </div>
+        </div>
+        <!-- Set dots -->
+        <div class="mt-3">
+          <div style="color:#6b7a99;font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">
+            Set Progress
+          </div>
+          <div id="set-dots" class="d-flex gap-2 flex-wrap"></div>
+        </div>
+      </div>
+
+      {% if demo_video_url %}
+      <div class="card-dark p-3 mb-3">
+        <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-film" style="color:#00ffcc;"></i>
+            <span style="color:#94a3b8;font-size:0.72rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;">
+              Demo Video
+            </span>
+          </div>
+          <span style="font-size:0.7rem;color:#6b7a99;">{{ meta.display_name }}</span>
+        </div>
+        <video controls autoplay muted loop playsinline preload="metadata"
+               style="width:100%;border-radius:14px;border:1px solid #1e2a3a;background:#080c14;">
+          <source src="{{ demo_video_url }}" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+        <div style="font-size:0.72rem;color:#6b7a99;margin-top:8px;">
+          Watch the movement first, then start your session.
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Live Stats -->
+      <div class="row g-2 mb-3">
+        <div class="col-6">
+          <div class="live-stat" id="stat-reps">
+            <div class="live-stat-num" id="live-reps">0</div>
+            <div class="live-stat-label">Reps</div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="live-stat">
+            <div class="live-stat-num" id="live-sets" style="color:#7c3aed;text-shadow:0 0 20px rgba(124,58,237,0.4);">0</div>
+            <div class="live-stat-label">Sets Done</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Efficiency Ring -->
+      <div class="card-dark p-3 mb-3 text-center">
+        <div style="color:#94a3b8;font-size:0.72rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">
+          <i class="bi bi-star-fill me-1" style="color:#fb923c;"></i> Form Efficiency
+        </div>
+        <div class="eff-ring-wrap">
+          <svg width="90" height="90" viewBox="0 0 90 90">
+            <circle class="eff-ring-bg" cx="45" cy="45" r="39"/>
+            <circle class="eff-ring-fg" id="eff-ring" cx="45" cy="45" r="39"/>
+          </svg>
+          <div class="eff-ring-text">
+            <span id="eff-num" style="font-size:1.4rem;font-weight:900;color:#00ffcc;font-family:'Courier New',monospace;">0</span>
+            <span style="font-size:0.6rem;color:#6b7a99;text-transform:uppercase;">%</span>
+          </div>
+        </div>
+        <!-- Rep progress toward set target -->
+        <div class="mt-3 px-2">
+          <div class="d-flex justify-content-between mb-1">
+            <span style="font-size:0.72rem;color:#6b7a99;">Rep Progress</span>
+            <span id="rep-progress-label" style="font-size:0.72rem;color:#00ffcc;">0 / 10</span>
+          </div>
+          <div class="target-bar-wrap">
+            <div class="target-bar" id="rep-progress-bar" style="width:0%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Exercise Info Card -->
+      <div class="card-dark p-3" style="border-color:#1e3a2a;">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span style="font-size:1.6rem;">{{ meta.icon }}</span>
+          <div>
+            <div style="font-weight:800;font-size:0.95rem;">{{ meta.display_name }}</div>
+            <span class="badge badge-difficulty-{{ meta.difficulty|lower }}" style="font-size:0.65rem;">
+              {{ meta.difficulty }}
+            </span>
+          </div>
+        </div>
+        <p style="color:#6b7a99;font-size:0.8rem;margin:0 0 8px;">{{ meta.description }}</p>
+        <div style="font-size:0.75rem;color:#475569;">
+          <i class="bi bi-bullseye me-1" style="color:#00ffcc;"></i>{{ meta.muscles }}
+        </div>
+      </div>
+
+    </div><!-- /col right -->
+  </div><!-- /row -->
+</div>
+
+<!-- ══════════ SAVE SUMMARY MODAL ══════════ -->
+<div id="effect-container"></div>
+<div id="summary-overlay" class="summary-overlay d-none">
+  <div class="summary-box">
+    
+    <div class="text-center mb-4">
+      <div style="font-size:3.2rem;">🏆</div>
+      <h4 id="summary-title" style="font-weight:900;color:#00ffcc;margin:8px 0 0;font-size:1.6rem;">Session Complete!</h4>
+      <p id="summary-message" style="color:#e6fdf4;font-size:1.05rem;margin:6px 0 0;line-height:1.25;">Great work — review & save your session</p>
+    </div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-6 text-center">
+        <div style="background:#0d1f2d;border-radius:12px;padding:14px;">
+          <div id="sum-reps" style="font-size:2rem;font-weight:900;color:#00ffcc;font-family:'Courier New',monospace;">0</div>
+          <div style="font-size:0.68rem;color:#6b7a99;text-transform:uppercase;letter-spacing:1px;">Total Reps</div>
+        </div>
+      </div>
+      <div class="col-6 text-center">
+        <div style="background:#0d1f2d;border-radius:12px;padding:14px;">
+          <div id="sum-duration" style="font-size:2rem;font-weight:900;color:#7c3aed;font-family:'Courier New',monospace;">0:00</div>
+          <div style="font-size:0.68rem;color:#6b7a99;text-transform:uppercase;letter-spacing:1px;">Duration</div>
+        </div>
+      </div>
+      <div class="col-6 text-center">
+        <div style="background:#0d1f2d;border-radius:12px;padding:14px;">
+          <div id="sum-sets" style="font-size:2rem;font-weight:900;color:#fb923c;font-family:'Courier New',monospace;">0</div>
+          <div style="font-size:0.68rem;color:#6b7a99;text-transform:uppercase;letter-spacing:1px;">Sets Done</div>
+        </div>
+      </div>
+      <div class="col-6 text-center">
+        <div style="background:#0d1f2d;border-radius:12px;padding:14px;">
+          <div id="sum-eff" style="font-size:2rem;font-weight:900;color:#34d399;font-family:'Courier New',monospace;">0%</div>
+          <div style="font-size:0.68rem;color:#6b7a99;text-transform:uppercase;letter-spacing:1px;">Efficiency</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Adjust before saving -->
+    <div class="row g-2 mb-3">
+      <div class="col-6">
+        <label style="color:#6b7a99;font-size:0.75rem;">Adjust Reps</label>
+        <input type="number" id="adj-reps" class="form-control text-center fw-bold" min="0">
+      </div>
+      <div class="col-6">
+        <label style="color:#6b7a99;font-size:0.75rem;">Adjust Sets</label>
+        <input type="number" id="adj-sets" class="form-control text-center fw-bold" min="0">
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button id="summary-save-btn" class="ctrl-btn ctrl-btn-save flex-grow-1" onclick="saveWorkout()">
+        <i class="bi bi-cloud-upload-fill"></i> Save Session
+      </button>
+      <button id="summary-close-btn" class="ctrl-btn flex-shrink-0" onclick="closeSummary()"
+              style="background:#1a2235;color:#94a3b8;border:1px solid #1e2a3a;">
+        Discard
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999;">
+  <div id="saveToast" class="toast" style="background:#064e3b;border:1px solid #34d399;color:#fff;" role="alert">
+    <div class="d-flex">
+      <div id="saveToastBody" class="toast-body fw-bold">✅ Workout saved to your records!</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+  <div id="motivationToast" class="toast" style="background:#1f2937;border:1px solid #fb923c;color:#fff;" role="alert">
+    <div class="d-flex">
+      <div id="motivationToastBody" class="toast-body fw-bold" style="font-size:1.05rem;">😢 Keep going — your next session will be stronger.</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+// ── Constants ──────────────────────────────────────────────
+const EXERCISE_KEY = '{{ exercise_key }}';
+const WS_URL  = `ws://${location.host}/ws/workout/${EXERCISE_KEY}/`;
+const SAVE_URL = '{% url "save_workout" %}';
+const CSRF     = '{{ csrf_token }}';
+
+// ── State ──────────────────────────────────────────────────
+let ws = null, stream = null;
+let timerInterval = null, captureInterval = null;
+let restInterval = null;
+let startTime = null;
+let currentReps = 0, currentSets = 0, currentEff = 0;
+let repsInCurrentSet = 0;
+let lastRepCount = 0;
+let isResting = false;
+let sessionFinalized = false;
+
+// ── DOM refs ───────────────────────────────────────────────
+const rawVideo      = document.getElementById('raw-video');
+const outCanvas     = document.getElementById('out-canvas');
+const captureCanvas = document.getElementById('capture-canvas');
+const placeholder   = document.getElementById('cam-placeholder-overlay');
+const btnStart      = document.getElementById('btn-start');
+const btnStop       = document.getElementById('btn-stop');
+const wsBadge       = document.getElementById('ws-status');
+const wsLabel       = document.getElementById('ws-label');
+const wsDot         = wsBadge.querySelector('.dot');
+const feedbackPill  = document.getElementById('feedback-pill');
+const restStatus    = document.getElementById('rest-status');
+const restCountdown = document.getElementById('rest-countdown');
+const restOverlay   = document.getElementById('rest-overlay');
+const restOverlayCountdown = document.getElementById('rest-overlay-countdown');
+const summaryTitle  = document.getElementById('summary-title');
+const summaryMessage = document.getElementById('summary-message');
+const summarySaveBtn = document.getElementById('summary-save-btn');
+const summaryCloseBtn = document.getElementById('summary-close-btn');
+const saveToastBody = document.getElementById('saveToastBody');
+const motivationToastBody = document.getElementById('motivationToastBody');
+const outCtx        = outCanvas.getContext('2d');
+
+// ── Resize canvas to video ─────────────────────────────────
+function resizeCanvas() {
+  const wrapper = document.getElementById('cam-wrapper');
+  outCanvas.width  = wrapper.clientWidth;
+  outCanvas.height = wrapper.clientHeight;
+  captureCanvas.width  = 640;
+  captureCanvas.height = 480;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// ── Build set dots ─────────────────────────────────────────
+function buildSetDots() {
+  const n = parseInt(document.getElementById('target-sets').value) || 3;
+  const wrap = document.getElementById('set-dots');
+  wrap.innerHTML = '';
+  for (let i = 1; i <= n; i++) {
+    const d = document.createElement('div');
+    d.className = 'set-dot' + (i === 1 ? ' active' : '');
+    d.id = `dot-${i}`;
+    d.textContent = i;
+    wrap.appendChild(d);
+  }
+}
+buildSetDots();
+document.getElementById('target-sets').addEventListener('change', buildSetDots);
+
+function getRestGap() {
+  return Math.max(0, parseInt(document.getElementById('rest-gap').value) || 0);
+}
+
+function markSetDone(n) {
+  const d = document.getElementById(`dot-${n}`);
+  if (d) { d.classList.remove('active'); d.classList.add('done'); d.textContent = '✓'; }
+  const next = document.getElementById(`dot-${n+1}`);
+  if (next) next.classList.add('active');
+}
+
+// ── Update efficiency ring ─────────────────────────────────
+function setEffRing(pct) {
+  const circ = 245;
+  document.getElementById('eff-ring').style.strokeDashoffset = circ - (circ * pct / 100);
+  document.getElementById('eff-ring').style.stroke =
+    pct >= 80 ? '#00ffcc' : pct >= 50 ? '#fb923c' : '#f87171';
+  document.getElementById('eff-num').textContent = pct;
+}
+
+// ── WS status badge ────────────────────────────────────────
+function setWsStatus(state) {
+  if (state === 'live') {
+    wsBadge.className = 'ws-badge ws-live';
+    wsDot.style.background = '#ff5555';
+    wsDot.classList.add('blink');
+    wsLabel.textContent = 'LIVE';
+  } else {
+    wsBadge.className = 'ws-badge ws-off';
+    wsDot.style.background = '#6b7a99';
+    wsDot.classList.remove('blink');
+    wsLabel.textContent = 'Disconnected';
+  }
+}
+
+function startCaptureLoop() {
+  if (!ws || ws.readyState !== WebSocket.OPEN || isResting || captureInterval) return;
+  captureInterval = setInterval(sendFrame, 80);
+}
+
+function stopCaptureLoop() {
+  if (captureInterval) {
+    clearInterval(captureInterval);
+    captureInterval = null;
+  }
+}
+
+function clearRestState() {
+  if (restInterval) {
+    clearInterval(restInterval);
+    restInterval = null;
+  }
+  isResting = false;
+  restStatus.classList.add('d-none');
+  if (restOverlay) { restOverlay.classList.add('d-none'); }
+  if (restOverlayCountdown) { restOverlayCountdown.textContent = '' }
+}
+
+function showToast(id) {
+  const el = document.getElementById(id);
+  if (el) new bootstrap.Toast(el).show();
+}
+
+function setSummaryMode(completed, autoSaved) {
+  if (completed) {
+    summaryTitle.textContent = 'Target Complete! 🎉';
+    summaryMessage.textContent = autoSaved
+      ? '🎉 Great job — your session has been saved automatically.'
+      : '🎉 Great job — you hit your target.';
+    summarySaveBtn.classList.add('d-none');
+    summaryCloseBtn.textContent = 'Close';
+  } else {
+    summaryTitle.textContent = 'Keep Going!';
+    summaryMessage.textContent = '😢 You stopped early, but every session still counts. Come back and finish stronger.';
+    summarySaveBtn.classList.remove('d-none');
+    summaryCloseBtn.textContent = 'Discard';
+  }
+}
+
+function clearEffectContainer() {
+  const container = document.getElementById('effect-container');
+  if (container) container.innerHTML = '';
+}
+
+function runEmojiEffect({ emojis, direction = 'rise', durationMs = 6000, count = 42 }) {
+  const container = document.getElementById('effect-container');
+  if (!container) return;
+  clearEffectContainer();
+
+  const pieces = [];
+  const classes = direction === 'rise' ? 'effect-piece effect-rise' : 'effect-piece effect-fall';
+  const durationSec = (durationMs / 1000).toFixed(2);
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    el.className = classes;
+    el.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+    el.style.left = `${Math.random() * 92 + 4}%`;
+    el.style.fontSize = `${28 + Math.random() * 20}px`;
+    el.style.animationDuration = `${durationSec}s`;
+    el.style.animationDelay = `${(Math.random() * 0.6).toFixed(2)}s`;
+    el.style.opacity = `${0.75 + Math.random() * 0.25}`;
+    el.style.top = direction === 'rise' ? `${75 + Math.random() * 18}vh` : `${-5 - Math.random() * 12}vh`;
+    el.style.transform = `rotate(${Math.random() * 360}deg)`;
+    container.appendChild(el);
+    pieces.push(el);
+  }
+
+  setTimeout(() => {
+    pieces.forEach(piece => piece.remove());
+  }, durationMs + 100);
+}
+
+function randomEffectDuration() {
+  return 5000 + Math.floor(Math.random() * 3000); // 5-8s
+}
+
+function runCelebration(durationMs = randomEffectDuration()) {
+  runEmojiEffect({
+    emojis: ['🎉', '✨', '🔥'],
+    direction: 'rise',
+    durationMs,
+    count: 20,
+  });
+}
+
+function runSadEffect(durationMs = randomEffectDuration()) {
+  runEmojiEffect({
+    emojis: ['🤦‍♂️', '👎'],
+    direction: 'fall',
+    durationMs,
+    count: 15,
+  });
+}
+
+function startRestPeriod() {
+  const restGap = getRestGap();
+  if (restGap <= 0) {
+    return;
+  }
+
+  isResting = true;
+  stopCaptureLoop();
+  restStatus.classList.remove('d-none');
+  restCountdown.textContent = restGap;
+  if (restOverlay) { restOverlay.classList.remove('d-none'); }
+  if (restOverlayCountdown) { restOverlayCountdown.textContent = restGap + 's'; }
+  feedbackPill.textContent = `REST FOR ${restGap}S`;
+  feedbackPill.style.color = '#fb923c';
+  feedbackPill.style.borderColor = '#fb923c55';
+  feedbackPill.style.background = '#fb923c11';
+
+  let remaining = restGap;
+  restInterval = setInterval(() => {
+    remaining -= 1;
+    if (remaining <= 0) {
+      clearRestState();
+      feedbackPill.textContent = 'READY TO RESUME';
+      feedbackPill.style.color = '#00ffcc';
+      feedbackPill.style.borderColor = '#1e2a3a';
+      feedbackPill.style.background = '#1a2235';
+      startCaptureLoop();
+      return;
+    }
+
+    restCountdown.textContent = remaining;
+    if (restOverlayCountdown) { restOverlayCountdown.textContent = remaining + 's'; }
+  }, 1000);
+}
+
+// ── Timer ──────────────────────────────────────────────────
+function formatTime(sec) {
+  const m = String(Math.floor(sec / 60)).padStart(2,'0');
+  const s = String(sec % 60).padStart(2,'0');
+  return `${m}:${s}`;
+}
+
+// ── Start ──────────────────────────────────────────────────
+async function startWorkout() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width:640, height:480 }, audio:false });
+    rawVideo.srcObject = stream;
+    await rawVideo.play();
+  } catch(e) {
+    alert('Camera access denied. Please allow camera in browser settings.');
+    return;
+  }
+
+  placeholder.style.display = 'none';
+  btnStart.classList.add('d-none');
+  btnStop.classList.remove('d-none');
+  clearRestState();
+  stopCaptureLoop();
+
+  // Reset state
+  currentReps = 0; currentSets = 0; currentEff = 0;
+  repsInCurrentSet = 0; lastRepCount = 0;
+  sessionFinalized = false;
+  document.getElementById('live-reps').textContent = '0';
+  document.getElementById('live-sets').textContent = '0';
+  setEffRing(0);
+  buildSetDots();
+
+  // Timer
+  startTime = Date.now();
+  timerInterval = setInterval(() => {
+    document.getElementById('timer-display').textContent =
+      formatTime(Math.floor((Date.now() - startTime) / 1000));
+  }, 1000);
+
+  // WebSocket
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => {
+    setWsStatus('live');
+    // Send frames every ~80ms (≈12fps)
+    startCaptureLoop();
+  };
+  ws.onmessage = (evt) => handleWSMessage(JSON.parse(evt.data));
+  ws.onerror   = () => { setWsStatus('off'); };
+  ws.onclose   = () => { setWsStatus('off'); stopCaptureLoop(); clearRestState(); };
+}
+
+// ── Capture & send frame ───────────────────────────────────
+function sendFrame() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const ctx = captureCanvas.getContext('2d');
+  ctx.drawImage(rawVideo, 0, 0, 640, 480);
+  const b64 = captureCanvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+  ws.send(JSON.stringify({ frame: b64 }));
+}
+
+// ── Handle server response ─────────────────────────────────
+function handleWSMessage(data) {
+  const targetReps = parseInt(document.getElementById('target-reps').value) || 10;
+  const targetSets = parseInt(document.getElementById('target-sets').value) || 3;
+
+  currentReps = data.reps;
+  currentEff  = data.efficiency;
+  document.getElementById('live-reps').textContent = currentReps;
+
+  // Keep the latest server state visible during rest, but do not advance set counters.
+  if (isResting) {
+    lastRepCount = data.reps;
+    setEffRing(currentEff);
+    feedbackPill.textContent = data.msg;
+    feedbackPill.style.color = data.hex_clr;
+    feedbackPill.style.borderColor = data.hex_clr + '55';
+    feedbackPill.style.background  = data.hex_clr + '11';
+    return;
+  }
+
+  // Update rep counter — detect new rep
+  if (data.reps > lastRepCount) {
+    const newReps = data.reps - lastRepCount;
+    repsInCurrentSet += newReps;
+    lastRepCount = data.reps;
+
+    // Flash reps box
+    const repBox = document.getElementById('stat-reps');
+    repBox.classList.add('pulse-green');
+    setTimeout(() => repBox.classList.remove('pulse-green'), 400);
+
+    // Check if set complete
+    if (currentSets < targetSets && repsInCurrentSet >= targetReps) {
+      currentSets++;
+      repsInCurrentSet = repsInCurrentSet - targetReps;
+      markSetDone(currentSets);
+      document.getElementById('live-sets').textContent = currentSets;
+      document.getElementById('live-sets').style.color = '#00ffcc';
+      setTimeout(() => document.getElementById('live-sets').style.color = '#7c3aed', 600);
+
+      if (currentSets < targetSets) {
+        startRestPeriod();
+      } else {
+        feedbackPill.textContent = 'TARGET SETS COMPLETE';
+        feedbackPill.style.color = '#00ffcc';
+        feedbackPill.style.borderColor = '#00ffcc55';
+        feedbackPill.style.background = '#00ffcc11';
+        if (!sessionFinalized) {
+          finishWorkout(true);
+        }
+      }
+    }
+  }
+
+  // Rep progress bar within current set
+  const prog = Math.min((repsInCurrentSet / targetReps) * 100, 100);
+  document.getElementById('rep-progress-bar').style.width = prog + '%';
+  document.getElementById('rep-progress-label').textContent =
+    `${repsInCurrentSet} / ${targetReps}`;
+
+  // Efficiency ring
+  setEffRing(currentEff);
+
+  // Feedback pill
+  if (currentSets < targetSets && !isResting) {
+    feedbackPill.textContent = data.msg;
+    feedbackPill.style.color = data.hex_clr;
+    feedbackPill.style.borderColor = data.hex_clr + '55';
+    feedbackPill.style.background  = data.hex_clr + '11';
+  }
+
+
+  // Draw processed frame from server
+  if (data.frame) {
+    const img = new Image();
+    img.onload = () => {
+      outCtx.drawImage(img, 0, 0, outCanvas.width, outCanvas.height);
+    };
+    img.src = 'data:image/jpeg;base64,' + data.frame;
+  }
+}
+
+// ── Stop / Finish / Save ───────────────────────────────────
+function finishWorkout(completed) {
+  if (sessionFinalized) return;
+  sessionFinalized = true;
+
+  clearInterval(timerInterval);
+  stopCaptureLoop();
+  clearRestState();
+
+  if (ws) { ws.close(); ws = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+
+  placeholder.style.display = 'flex';
+  btnStart.classList.remove('d-none');
+  btnStop.classList.add('d-none');
+  setWsStatus('off');
+
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  const targetSets = parseInt(document.getElementById('target-sets').value) || 3;
+  const targetReps = parseInt(document.getElementById('target-reps').value) || 10;
+
+  document.getElementById('sum-reps').textContent = currentReps;
+  document.getElementById('sum-sets').textContent = currentSets;
+  document.getElementById('sum-eff').textContent = currentEff + '%';
+  document.getElementById('sum-duration').textContent = formatTime(elapsed);
+  document.getElementById('adj-reps').value = currentReps;
+  document.getElementById('adj-sets').value = currentSets;
+
+  window._sessionData = {
+    elapsed,
+    targetSets,
+    targetReps,
+    restGap: getRestGap(),
+  };
+
+  // show summary overlay immediately (autoSaved=false until save confirms)
+  setSummaryMode(completed, false);
+  document.getElementById('summary-overlay').classList.remove('d-none');
+
+  if (completed) {
+    // celebration animation for completed target
+    try { runCelebration(); } catch(e) { console.warn('celebration failed', e); }
+    // kick off auto-save, update UI when save completes
+    saveWorkout({ auto: true }).then(() => {
+      // ensure summary reflects that auto-save succeeded
+      setSummaryMode(true, true);
+    }).catch(() => {
+      // saveWorkout handles UI for failures; keep overlay open so user can save manually
+    });
+  } else {
+    try { runSadEffect(); } catch(e) { console.warn('sad effect failed', e); }
+    motivationToastBody.textContent = 'Keep going — you stopped early, but this session still counts.';
+    showToast('motivationToast');
+  }
+}
+
+function stopWorkout() {
+  if (sessionFinalized) return;
+  finishWorkout(false);
+}
+
+function closeSummary() {
+  document.getElementById('summary-overlay').classList.add('d-none');
+}
+
+// ── Save ───────────────────────────────────────────────────
+async function saveWorkout(options = {}) {
+  const auto = options.auto === true;
+  const adjReps = parseInt(document.getElementById('adj-reps').value) || 0;
+  const adjSets = parseInt(document.getElementById('adj-sets').value) || 0;
+  const sd = window._sessionData || {};
+
+  const payload = {
+    exercise:          EXERCISE_KEY,
+    total_reps:        adjReps,
+    sets_completed:    adjSets,
+    target_reps:       sd.targetReps || 10,
+    target_sets:       sd.targetSets || 3,
+    duration_seconds:  sd.elapsed    || 0,
+    efficiency_percent: currentEff,
+    target_met: adjSets >= (sd.targetSets || 3) && adjReps >= ((sd.targetReps || 10) * (sd.targetSets || 3)),
+    notes: `Rest gap: ${sd.restGap || 0}s`,
+  };
+
+  try {
+    console.log('Saving workout (auto=', auto, ')', payload);
+    const response = await fetch(SAVE_URL, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Accept':'application/json', 'Content-Type':'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (data.status === 'saved') {
+      saveToastBody.textContent = auto
+        ? '🎉 Target complete! Your workout was saved automatically.'
+        : '✅ Workout saved to your records!';
+      showToast('saveToast');
+      // update overlay text/buttons to show saved state
+      setSummaryMode(true, true);
+      if (!auto) {
+        closeSummary();
+      }
+      return;
+    }
+    // unexpected non-saved response
+    throw new Error('Save response: ' + JSON.stringify(data));
+  } catch (error) {
+    console.error(error);
+    if (auto) {
+      summarySaveBtn.classList.remove('d-none');
+      summaryCloseBtn.textContent = 'Discard';
+      summaryMessage.textContent = 'Auto save failed. You can save this session manually.';
+      // also show a gentle toast so user notices
+      motivationToastBody.textContent = 'Auto-save failed — tap Save to retry.';
+      showToast('motivationToast');
+      throw error;
+    }
+  }
+}
+</script>
+{% endblock %}

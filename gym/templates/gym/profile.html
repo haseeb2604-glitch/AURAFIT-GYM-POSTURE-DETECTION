@@ -1,0 +1,83 @@
+{% extends 'gym/base.html' %}
+{% block title %}Profile — AuraFit Pro{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-4">
+  <div class="page-header">
+    <h1 style="font-weight:800;">👤 My Profile</h1>
+    <p style="color:#6b7a99;margin:0;">Manage your fitness profile</p>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-12 col-md-4">
+      <div class="card-dark p-4 text-center">
+        {% if profile.profile_pic %}
+          <img src="{{ profile.profile_pic.url }}" class="rounded-circle mb-3"
+               style="width:100px;height:100px;object-fit:cover;border:3px solid #00ffcc;">
+        {% else %}
+          <div style="width:100px;height:100px;border-radius:50%;background:#1a2235;
+                      display:flex;align-items:center;justify-content:center;
+                      margin:0 auto 12px;border:3px solid #1e2a3a;font-size:2.5rem;">
+            👤
+          </div>
+        {% endif %}
+        <h5 style="font-weight:800;">{{ user.get_full_name|default:user.username }}</h5>
+        <p style="color:#6b7a99;font-size:0.85rem;">@{{ user.username }}</p>
+        <p style="color:#94a3b8;font-size:0.85rem;">
+          <i class="bi bi-envelope me-1"></i>{{ user.email }}
+        </p>
+        {% if profile.bmi %}
+        <div class="card-dark2 p-2 mt-2">
+          <div style="font-size:1.5rem;font-weight:800;color:#00ffcc;">{{ profile.bmi }}</div>
+          <div style="font-size:0.7rem;color:#6b7a99;text-transform:uppercase;">BMI</div>
+        </div>
+        {% endif %}
+        {% if profile.fitness_goal %}
+        <div class="mt-3 p-2" style="background:#0d1f2d;border-radius:8px;border:1px solid #1e2a3a;">
+          <div style="font-size:0.7rem;color:#6b7a99;margin-bottom:4px;">GOAL</div>
+          <div style="font-size:0.85rem;color:#00ffcc;">{{ profile.fitness_goal }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="col-12 col-md-8">
+      <div class="card-dark p-4">
+        <h5 class="mb-4" style="color:#94a3b8;">Update Profile</h5>
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label>Age</label>
+              <input type="number" name="age" class="form-control"
+                     value="{{ profile.age|default:'' }}" min="10" max="100" placeholder="25">
+            </div>
+            <div class="col-md-4">
+              <label>Weight (kg)</label>
+              <input type="number" name="weight_kg" class="form-control" step="0.1"
+                     value="{{ profile.weight_kg|default:'' }}" placeholder="70.0">
+            </div>
+            <div class="col-md-4">
+              <label>Height (cm)</label>
+              <input type="number" name="height_cm" class="form-control" step="0.1"
+                     value="{{ profile.height_cm|default:'' }}" placeholder="175.0">
+            </div>
+            <div class="col-12">
+              <label>Fitness Goal</label>
+              <input type="text" name="fitness_goal" class="form-control"
+                     value="{{ profile.fitness_goal }}" placeholder="e.g. Lose weight, Build muscle">
+            </div>
+            <div class="col-12">
+              <label>Profile Picture</label>
+              <input type="file" name="profile_pic" class="form-control" accept="image/*">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-accent px-4 py-2 mt-3">
+            <i class="bi bi-save-fill me-2"></i>Save Changes
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
